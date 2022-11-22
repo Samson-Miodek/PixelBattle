@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8">
+  <title>Index</title>
+  <!--  <link href="/webjars/bootstrap/css/bootstrap.min.css" rel="stylesheet">-->
+  <!--  <link href="/main.css" rel="stylesheet">-->
+  <script src="/webjars/jquery/jquery.min.js"></script>
+  <script src="/webjars/sockjs-client/sockjs.min.js"></script>
+  <script src="/webjars/stomp-websocket/stomp.min.js"></script>
+  <script src="/p5.js"></script>
+  <style>
+    html{
+      overflow-y: hidden;
+      overflow-x: hidden;
+    }
+    *{
+      touch-action: none;
+      margin: 0;
+      color: white;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    #head{
+      position: absolute;
+      margin: 40px;
+    }
+    #progress{
+      width: 100vw;
+      height: 0.66vh;
+    }
+    #progress-bar{
+      background: cornsilk;
+      width: 33%;
+      height: 100%;
+    }
+    footer{
+      position: absolute;
+      width: 100vw;
+      height: 20vh;
+      bottom: 10px;
+      margin-bottom: 0;
+    }
+    .footer{
+      display: flex;
+      justify-content: center;
+      width: 40%;
+      height: 100%;
+      margin: auto;
+    }
+    button{
+      width: 80%;
+      height: 40%;
+      margin: 20px;
+      font-size: 30px;
+      color: black;
+      padding: 20px;
+    }
+    @media (min-width: 1000px) {
+      footer {display: none;}
+    }
+  </style>
+</head>
+<body>
+  <div style="position: absolute">
+    <div id="progress">
+      <div id="progress-bar">
+
+      </div>
+    </div>
+  </div>
+  <div id="head">
+    wasd + mouse wheel <br>
+    <div sec:authorize="isAnonymous()">
+      <a href="/login">Чтобы рисовать, пожалуйста <strong>войдите</strong> в систему</a> <br>
+      <a href="/register">Зарегистрироваться</a>
+    </div>
+    <input type="color" id="color" value="#ff0000" />
+    <div sec:authorize="hasAuthority('ROLE_ADMIN')">
+      <a href="/clearMap">Очистить карту</a> <br>
+    </div>
+    <div sec:authorize="isAuthenticated()">
+      <a href="/logout">Выйти</a>
+    </div>
+  </div>
+
+<script>
+  var stompClient = null;
+  var map = {}
+  var lastClick = Date.now()
+  var progressBar = null;
+  var f = true;
+
+  $(function () {
+    connect();
+    progressBar = $('#progress-bar');
+  });
+
+  function connect() {
+    var socket = new SockJS('/pixel-battle');
+    stompClient = Stomp.over(socket);
+    stompClient.connect({}, function (frame) {
+      stompClient.subscribe('/topic/pixels', function (pixelData) {
+        var pixel = JSON.parse(pixelData.body)
+        addPixel(pixel);
+      });
+    });
+
+
+  }
+
+  function disconnect() {
+    if (stompClient !== null) {
+      stompClient.disconnect();
+    }
+    console.log("Disconnected");
+  }
+
+  function sendPixel(x,y,newColor) {
+    var coordinates =  x+" "+y
+    var oldColor = '#ffffff'
+    if (map.hasOwnProperty(coordinates))
+      oldColor = map[coordinates]
+
+    if(oldColor !== newColor && f){
+      lastClick = Date.now()
+      f = false;
+      stompClient.send("/sendPixel", {}, JSON.stringify({'x': x,'y': y,'color':newColor}));
+    }
+  }
+
+  function addPixel(pixel) {
+    map[pixel.x+" "+pixel.y] = pixel.color
+  }
+
+
+
+  let x = 0;
+  let y = 0;
+  let s = 1;
+  let pixelSize = 10
+  let colorPicker = null
+
+  function setup() {
+    colorPicker = document.getElementById("color")
+    cnv = createCanvas(innerWidth, innerHeight);
+    cnv.mouseWheel(changeSize);
+  }
+
+  function changeSize(event) {
+    if (event.deltaY > 0) {
+      s+= 0.05;
+    }else {
+      if(s-0.05 > 0)
+        s-=0.025;
+    }
+  }
+
+
+  var speed = 10;
+
+  function draw() {
+    var p = (Date.now() -  lastClick)/1000/6*100
+
+    if(p <= 100)
+      progressBar.css("width", (100-p)+"%");
+    else
+      f = true;
+
+    background(50);
+
+    key = key.toLowerCase()
+
+    if(keyIsPressed && key=='w')
+      y-=speed;
+    if(keyIsPressed && key=='s')
+      y+=speed;
+    if(keyIsPressed && key=='a')
+      x-=speed;
+    if(keyIsPressed && key=='d')
+      x+=speed;
+
+    var offX = innerWidth, offY = innerHeight
+
+    scale(s);
+    translate(-x+offX/2/s, -y+offY/2/s);
+
+
+    for (const pos in map) {
+      if (map.hasOwnProperty(pos)) {
+        var color = map[pos]
+        var arr = pos.split(' ')
+        var nx = parseInt(arr[0])
+        var ny = parseInt(arr[1])
+        try {
+          fill(color)
+          rect(nx,ny,pixelSize,pixelSize)
+        } catch (err) {
+          delete map[pos]
+          console.log(err)
+        }
+      }
+    }
+
+
+
+    var mx = (mouseX-offX/2)/s+x;
+    var my = (mouseY-offY/2)/s+y;
+
+
+    var px = mx - pixelSize/2;
+    var py = my - pixelSize/2;
+
+    px = Math.round(px/pixelSize)*pixelSize
+    py = Math.round(py/pixelSize)*pixelSize
+
+
+    fill(colorPicker.value);
+    rect(px,py,pixelSize,pixelSize);
+
+    if (mouseIsPressed && f){
+      // console.log(px,py)
+      sendPixel(px,py,colorPicker.value)
+    }
+  }
+
+
+  fetch('/map')
+          .then(res => res.json())
+          .then(out =>
+          {
+            console.log('The map has been successfully received!', out)
+            map = out;
+          })
+          .catch(err => { throw err });
+
+  function scaleUp(){
+    s+=0.2
+  }
+  function scaleDown(){
+    s-=0.2
+  }
+  function w(){
+    y-=speed;
+
+  }
+  function a(){
+    x-=speed;
+  }
+  function ss(){
+    y+=speed;
+  }
+  function d(){
+    x+=speed;
+  }
+</script>
+  <footer>
+    <div class="footer">
+      <button id="scale+" onclick="scaleUp()">+</button>
+      <button id="scale-" onclick="scaleDown()">-</button>
+      <button id="w" onclick="w()">w</button>
+      <button id="s" onclick="a()">a</button>
+      <button id="a" onclick="ss()">s</button>
+      <button id="d" onclick="d()">d</button>
+    </div>
+  </footer>
+</body>
+</html>

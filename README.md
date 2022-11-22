@@ -1,4 +1,4 @@
 # PixelBattle
 
-
-[![Alt text](https://img.youtube.com/vi/VID/0.jpg)](https://www.youtube.com/watch?v=nQmpbtkYzXI)
+https://www.youtube.com/watch?v=nQmpbtkYzXI
+[ ](https://www.youtube.com/watch?v=nQmpbtkYzXI)
